@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+
 permissions:
   contents: write
 
@@ -11,10 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
-        with: { run_install: false }
+        with:
+          run_install: false
 
       - uses: actions/setup-node@v4
         with:
@@ -38,9 +41,10 @@ jobs:
         run: |
           set -e
           rm -rf /tmp/render-build
-          mkdir -p /tmp/render-build
+          mkdir -p /tmp/render-build/build
           cp package.json pnpm-lock.yaml /tmp/render-build/
-          cp -R build /tmp/render-build/build
++         # ⚠️ Copy the *contents* of build/, not the folder itself
+          cp -R build/* /tmp/render-build/build
           cp server.js /tmp/render-build/
           if [ -d public ]; then cp -R public /tmp/render-build/public; fi
 
@@ -60,3 +64,4 @@ jobs:
           git branch -M render-build
           git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
           git push -f origin render-build
+
