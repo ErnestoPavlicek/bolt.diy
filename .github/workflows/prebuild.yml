@@ -1,67 +1,73 @@
 name: Prebuild for Render
+
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  build-and-publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      - name: Setup Node.js 20 & pnpm cache
+        uses: actions/setup-node@v4
         with:
-          run_install: false
+          node-version: '20'
+          cache: 'pnpm'
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
+      - name: Enable corepack & pnpm
+        run: |
+          corepack enable
+          npm install -g pnpm
 
-      - name: Install deps
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Increase Node memory for build
+      - name: Give more RAM for build
         run: echo "NODE_OPTIONS=--max-old-space-size=6144" >> $GITHUB_ENV
 
-      - name: Build (Vite/Remix)
+      - name: Build (Vite / Remix)
         run: pnpm run build
 
       - name: Verify build output
-        run: test -f build/server/index.js && test -d build/client/assets
-
-      - name: Publish runtime bundle to 'render-build' branch
-        shell: bash
         run: |
-          set -e
-          rm -rf /tmp/render-build
-          mkdir -p /tmp/render-build/build
-          cp package.json pnpm-lock.yaml /tmp/render-build/
-+         # ⚠️ Copy the *contents* of build/, not the folder itself
-          cp -R build/* /tmp/render-build/build
-          cp server.js /tmp/render-build/
-          if [ -d public ]; then cp -R public /tmp/render-build/public; fi
+          echo "📂 Listing build directory:"
+          ls -R build
+          test -f build/server/index.js    || (echo "Missing server build" && exit 1)
+          test -d build/client/assets      || (echo "Missing client assets" && exit 1)
 
-          cat > /tmp/render-build/start.sh <<'EOF'
+      - name: Prepare render-build directory
+        run: |
+          rm -rf render-build
+          mkdir -p render-build/build
+          cp -R build render-build/build
+          cp server.js render-build/
+          if [ -d public ]; then cp -R public render-build/public; fi
+
+          cat << 'EOF' > render-build/start.sh
           #!/usr/bin/env bash
           set -e
+          cd "$(dirname "$0")"
           node server.js
           EOF
-          chmod +x /tmp/render-build/start.sh
+          chmod +x render-build/start.sh
 
-          cd /tmp/render-build
-          git init
+      - name: Publish runtime bundle to orphan branch
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          # Create a brand-new branch with only render-build/
+          git checkout --orphan render-build
+          git reset --hard
+          git add render-build
           git commit -m "Publish runtime bundle"
-          git branch -M render-build
-          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
           git push -f origin render-build
-
