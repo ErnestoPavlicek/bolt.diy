@@ -11,38 +11,39 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repo
+      # 1. Checkout the repo
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js 20
+      # 2. Install Node 20 + enable pnpm via Corepack
+      - name: Setup Node & Corepack
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "pnpm"
-
-      - name: Enable Corepack and install pnpm
+          node-version: '20'
+          cache: 'pnpm'
+      - name: Activate pnpm
         run: |
           corepack enable
-          corepack prepare pnpm@latest --activate
+          corepack prepare pnpm@^9 --activate
 
+      # 3. Install & build
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Increase Node memory for build
-        run: echo "NODE_OPTIONS=--max-old-space-size=6144" >> $GITHUB_ENV
-
       - name: Build (Vite / Remix)
         run: pnpm run build
 
-      - name: Verify build output
+      # 4. Validate build output
+      - name: Verify build
         run: |
           test -f build/server/index.js
           test -d build/client/assets
 
-      - name: Publish runtime bundle to 'render-build' branch
+      # 5. Package into render-build branch
+      - name: Publish runtime bundle to render-build
         shell: bash
         run: |
           set -e
@@ -51,9 +52,10 @@ jobs:
           cp package.json pnpm-lock.yaml /tmp/render-build/
           cp -R build /tmp/render-build/build
           cp server.js /tmp/render-build/
+          # include static /public if you have one
           if [ -d public ]; then cp -R public /tmp/render-build/public; fi
 
-          cat > /tmp/render-build/start.sh <<'EOF'
+          cat > /tmp/render-build/start.sh << 'EOF'
           #!/usr/bin/env bash
           set -e
           node server.js
@@ -65,8 +67,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Publish runtime bundle"
+          git commit -m "Publish runtime bundle" || echo "No changes to commit"
           git branch -M render-build
-          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           git push -f origin render-build
+
 
