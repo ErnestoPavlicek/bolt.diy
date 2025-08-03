@@ -1,0 +1,43 @@
+name: Prebuild for Render
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Publish
+        run: |
+          tar -czf render-build.tgz build public package.json pnpm-lock.yaml server.js start.sh
+          git fetch origin
+          git checkout --orphan render-build
+          git reset --hard
+          tar -xzf render-build.tgz
+          rm render-build.tgz
+          git add .
+          git commit -m "chore: render build $(date -u +'%Y-%m-%dT%H:%M:%SZ')" || true
+          git push origin render-build --force
+
