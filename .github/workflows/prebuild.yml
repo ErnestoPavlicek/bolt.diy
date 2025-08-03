@@ -3,7 +3,7 @@ name: Prebuild for Render
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [main]
 
 permissions:
   contents: write
@@ -18,23 +18,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      # 1) Install pnpm first (using the version in your package.json)
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           run_install: false
 
-      # 2) Now you can safely enable pnpm caching in setup-node
-      - name: Setup Node
+      - name: Setup Node 20 (with pnpm cache)
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
+          node-version: 20
+          cache: pnpm
 
-      - name: Install dependencies
+      - name: Install deps
         run: pnpm install --frozen-lockfile
 
-      - name: Increase Node memory
+      - name: Increase Node memory for build
         run: echo "NODE_OPTIONS=--max-old-space-size=6144" >> $GITHUB_ENV
 
       - name: Build (Vite/Remix)
@@ -46,16 +44,20 @@ jobs:
       - name: Verify server build exists
         run: test -f build/server/index.js && ls -la build/server
 
-      - name: Publish runtime bundle to render-build branch
+      - name: Publish runtime bundle to 'render-build' branch
         shell: bash
         run: |
           set -e
+
+          # Make a minimal, deployable tree
           rm -rf /tmp/render-build
           mkdir -p /tmp/render-build
-              cp package.json pnpm-lock.yaml /tmp/render-build/
+          cp package.json pnpm-lock.yaml /tmp/render-build/
           cp -R build /tmp/render-build/build
           cp server.js /tmp/render-build/
+          if [ -d public ]; then cp -R public /tmp/render-build/public; fi
 
+          # Simple start script for Render
           cat > /tmp/render-build/start.sh <<'EOF'
           #!/usr/bin/env bash
           set -e
@@ -63,6 +65,7 @@ jobs:
           EOF
           chmod +x /tmp/render-build/start.sh
 
+          # Force-push to render-build branch
           cd /tmp/render-build
           git init
           git config user.name "github-actions[bot]"
@@ -70,6 +73,7 @@ jobs:
           git add -A
           git commit -m "Publish runtime bundle"
           git branch -M render-build
-          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
           git push -f origin render-build
+
 
